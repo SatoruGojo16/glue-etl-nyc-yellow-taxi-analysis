@@ -1,0 +1,171 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "CloudFormation template for EventBridge Rules",
+  "Resources": {
+    "Roled8b4aa3e": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "Amazon_EventBridge_Rule_Target_cc63_rule-process-etl-ny47d94308",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceAccount": {
+                    "Fn::Sub": "${AWS::AccountId}"
+                  },
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/rule-process-etl-nyc-yellow-data-model"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "MaxSessionDuration": 3600,
+        "Tags": []
+      }
+    },
+    "Policy53730d1c": {
+      "Type": "AWS::IAM::RolePolicy",
+      "Properties": {
+        "PolicyName": "Amazon_EventBridge_Invoke_Lambda_141705453976349501",
+        "RoleName": {
+          "Ref": "Roled8b4aa3e"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "lambda:InvokeFunction"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:lambda-process-s3-processed-nyc-files"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "Rule6eff0f15": {
+      "Type": "AWS::Events::Rule",
+      "DependsOn": [
+        "Roled8b4aa3e",
+        "Policy53730d1c"
+      ],
+      "Properties": {
+        "Name": "rule-process-etl-nyc-yellow-data-model",
+        "EventPattern": "{\"source\":[\"aws.glue\"],\"detail-type\":[\"Glue Job State Change\"],\"detail\":{\"jobName\":[\"etl-glue-nyc-yellow-data-model\"],\"state\":[\"SUCCEEDED\"]}}",
+        "State": "ENABLED",
+        "EventBusName": "default",
+        "Targets": [
+          {
+            "Id": "Id06e552f5-55a5-4b28-ab54-f0775bcf1e07",
+            "Arn": {
+              "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:lambda-process-s3-processed-nyc-files"
+            },
+            "RoleArn": {
+              "Fn::GetAtt": [
+                "Roled8b4aa3e",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "Role62b47bf7": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "Amazon_EventBridge_Rule_Target_7f33_rule-process-postgraf798d9d",
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "events.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole",
+              "Condition": {
+                "StringEquals": {
+                  "aws:SourceArn": {
+                    "Fn::Sub": "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/rule-process-postgres-data-load"
+                  },
+                  "aws:SourceAccount": {
+                    "Fn::Sub": "${AWS::AccountId}"
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "MaxSessionDuration": 3600,
+        "Tags": []
+      }
+    },
+    "Policy5c13ab33": {
+      "Type": "AWS::IAM::RolePolicy",
+      "Properties": {
+        "PolicyName": "Amazon_EventBridge_Invoke_Sns_1861898239776a61d7",
+        "RoleName": {
+          "Ref": "Role62b47bf7"
+        },
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "sns:Publish"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:notify-s3-mail"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "Rule7cc70ccb": {
+      "Type": "AWS::Events::Rule",
+      "DependsOn": [
+        "Role62b47bf7",
+        "Policy5c13ab33"
+      ],
+      "Properties": {
+        "Name": "rule-process-postgres-data-load",
+        "EventPattern": "{\"source\":[\"aws.glue\"],\"detail-type\":[\"Glue Job State Change\"],\"detail\":{\"jobName\":[\"etl-glue-load-to-postgres\"],\"state\":[\"FAILED\",\"SUCCEEDED\"]}}",
+        "State": "ENABLED",
+        "EventBusName": "default",
+        "Targets": [
+          {
+            "Id": "Ida53b0f7c-ba21-4c4b-ab96-a8ddfedcc08e",
+            "Arn": {
+              "Fn::Sub": "arn:${AWS::Partition}:sns:${AWS::Region}:${AWS::AccountId}:notify-s3-mail"
+            },
+            "RoleArn": {
+              "Fn::GetAtt": [
+                "Role62b47bf7",
+                "Arn"
+              ]
+            }
+          }
+        ]
+      }
+    }
+  },
+  "Parameters": {}
+}

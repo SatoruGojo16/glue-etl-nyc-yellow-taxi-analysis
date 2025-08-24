@@ -1,0 +1,55 @@
+{
+	"jobConfig": {
+		"name": "etl-glue-load-to-postgres",
+		"description": "",
+		"role": "arn:aws:iam::023495890465:role/aws-glue-user",
+		"command": "glueetl",
+		"version": "5.0",
+		"runtime": null,
+		"workerType": "G.1X",
+		"numberOfWorkers": 2,
+		"maxCapacity": 2,
+		"jobRunQueuingEnabled": false,
+		"maxRetries": 0,
+		"timeout": 480,
+		"maxConcurrentRuns": 1,
+		"delay": 1,
+		"security": "none",
+		"scriptName": "etl-glue-load-to-postgres.py",
+		"scriptLocation": "s3://aws-glue-assets-023495890465-us-east-1/scripts/",
+		"language": "python-3",
+		"spark": true,
+		"sparkConfiguration": "standard",
+		"jobParameters": [
+			{
+				"key": "--PROCESSED_MONTH",
+				"value": "1",
+				"existing": false
+			},
+			{
+				"key": "--PROCESSED_YEAR",
+				"value": "2021",
+				"existing": false
+			}
+		],
+		"tags": [],
+		"jobMode": "DEVELOPER_MODE",
+		"createdOn": "2025-08-23T19:47:29.957Z",
+		"developerMode": true,
+		"connectionsList": [],
+		"temporaryDirectory": "s3://aws-glue-assets-023495890465-us-east-1/temporary/",
+		"glueHiveMetastore": true,
+		"etlAutoTuning": true,
+		"metrics": true,
+		"observabilityMetrics": true,
+		"dependentPath": "s3://aws-glue-sandy-demo/postgresql-42.7.7.jar",
+		"bookmark": "job-bookmark-disable",
+		"sparkPath": "s3://aws-glue-assets-023495890465-us-east-1/sparkHistoryLogs/",
+		"flexExecution": false,
+		"minFlexWorkers": null,
+		"maintenanceWindow": null
+	},
+	"hasBeenSaved": false,
+	"usageProfileName": null,
+	"script": "import sys\nfrom awsglue.transforms import *\nfrom awsglue.utils import getResolvedOptions\nfrom pyspark.context import SparkContext\nfrom awsglue.context import GlueContext\nfrom awsglue.job import Job\nimport boto3 \nfrom datetime import datetime \nfrom botocore.exceptions import ClientError \nimport json \n\n## @params: [JOB_NAME]\nargs = getResolvedOptions(sys.argv, ['JOB_NAME','PROCESSED_YEAR','PROCESSED_MONTH'])\n\nsc = SparkContext()\nglueContext = GlueContext(sc)\nspark = glueContext.spark_session\njob = Job(glueContext)\njob.init(args['JOB_NAME'], args)\n\n\ndef get_db_config():\n    secret_name = \"dev/postgres/nyc_uber\"\n    client = boto3.client(\n        service_name='secretsmanager',\n    )\n    try:\n        get_secret_value_response = client.get_secret_value(\n            SecretId=secret_name\n        )\n    except ClientError as e:\n        print(f'Unable to retrive secret - {str(e)}')\n        raise e\n    \n    return get_secret_value_response['SecretString']\ndb_config = json.loads(get_db_config())\n\njdbc_url = f\"jdbc:postgresql://{db_config['host']}:{db_config['port']}/{db_config['dbname']}\"\nconnection_properties = {\n    \"user\": db_config['username'],\n    \"password\": db_config['password'],\n    \"driver\": \"org.postgresql.Driver\"\n}\n\nglue_database = 'db_nyc_uber'\n\n# Create If Not exists - Dimenstion tables\ndim_tables_list = ['dim_vendors','dim_ratecode','dim_store_and_fwd_flag','dim_payment_type','dim_trip_peak_band','dim_date','dim_time','dim_taxi_zone_lookup']\nfor dim_table in dim_tables_list:\n    print(dim_table)\n    table_check = spark.read.jdbc(url=jdbc_url, table=f\"(SELECT tablename FROM pg_catalog.pg_tables where schemaname = 'public' and tablename='{dim_table}')\", properties=connection_properties)\n    if table_check.count() == 0:\n        df= glueContext.create_data_frame.from_catalog(database=glue_database, table_name=dim_table)\n        df.write.jdbc(url=jdbc_url, table=dim_table, properties=connection_properties)\n        print(f'DIM Table - {dim_table} - is created!')\n    else:\n        print(f'DIM Table - {dim_table} - already exists!')\n\n# Loading Fact Table \nfact_table_name = 'fact_uber_trips'\ndf = glueContext.create_data_frame_from_catalog(database=glue_database, table_name=fact_table_name)\nPROCESSED_YEAR = args['PROCESSED_YEAR']\nPROCESSED_MONTH = args['PROCESSED_MONTH']\ndf = df.filter(f\" processed_month = '{PROCESSED_MONTH}' and processed_year = '{PROCESSED_YEAR}' \")\ndf.write.mode(\"append\").jdbc(url=jdbc_url, table=fact_table_name, properties=connection_properties)\nprint(f'Fact Table - {fact_table_name} - is loaded!')\n\n\njob.commit()"
+}
